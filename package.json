@@ -1,0 +1,16 @@
+{
+  "name": "shazam-song-recommender",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+"scripts": {
+  "backend": "backend\\venv\\Scripts\\python -m uvicorn backend.app.main:app --reload --port 8000 --log-level info",
+  "frontend": "npm run dev --prefix frontend"
+},
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
