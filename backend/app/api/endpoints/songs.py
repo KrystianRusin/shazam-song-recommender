@@ -1,6 +1,9 @@
 import logging
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
+from backend.models.database import get_db
+from backend.models.song import Song as SongModel, Fingerprint
+from backend.utils.audio_processing import convert_to_wav
 from typing import List
 
 router = APIRouter()
@@ -39,7 +42,7 @@ async def upload_song(file: UploadFile = File(...)):
     logger.info(f"Received file upload: {file.filename}")
 
     # Validate file type again
-    if not file.filename.endswith('.mp3'):
+    if not (file.filename.endswith('.mp3') or file.filename.endswith('.wav')):
         logger.warning(f"Invalid file type:  {file.filename}")
         raise HTTPException(status_code=400, detail="Only MP3 files are accepted")
 
@@ -49,7 +52,12 @@ async def upload_song(file: UploadFile = File(...)):
         logger.info(f"Successfully read {len(contents)} bytes from {file.filename}")
 
         # TODO: Process audio data to create fingerprint
-        # 1. Convert MP3 to format librosa can process
+        # 1. Convert MP3 to format librosa can process (.wav)
+        if file.filename.endswith('.mp3'):
+            wav_io = convert_to_wav(contents)
+            # Verify conversion worked
+            wav_data = wav_io.read()
+            logger.info(f"Successfully converted to WAV: {len(wav_data)} bytes")
         # 2. Create spectrogram
         # 3. Extract features for fingerprinting
         # Example placeholder:
@@ -58,6 +66,13 @@ async def upload_song(file: UploadFile = File(...)):
         # TODO: Strore fingerprint in database
         # Example placeholder
         # db_id = store_fingerprint_in_db(audio_fingerprint, file.filename)
+
+        new_id = max(song.id for song in songs_db) + 1
+        song_title = file.filename.replace('.mp3', '').replace('.wav', '')
+        new_song = Song(id=new_id, title=song_title, artist="Unknown")
+        songs_db.append(new_song)
+        
+        return new_song
 
     except Exception as e:
         logger.error(f"Error processing file: {str(e)}")
