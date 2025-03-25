@@ -1,10 +1,12 @@
 import logging
+from fastapi import Depends
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from backend.models.database import get_db
-from backend.models.song import Song as SongModel, Fingerprint
-from backend.utils.audio_processing import convert_to_wav, create_spectrogram, visualize_spectrogram
+from backend.models.song import Song as SongModel, Fingerprint as FingerprintModel
+from backend.utils.audio_processing import convert_to_wav, create_spectrogram, visualize_spectrogram, generate_fingerprint
 from typing import List
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 
@@ -38,7 +40,7 @@ async def get_song(song_id: int):
     raise HTTPException(status_code=404, detail="Song Not Found")
 
 @router.post("/upload", response_model=Song)
-async def upload_song(file: UploadFile = File(...)):
+async def upload_song(file: UploadFile = File(...), db: Session = Depends(get_db)):
     logger.info(f"Received file upload: {file.filename}")
 
     # Validate file type again
@@ -61,19 +63,23 @@ async def upload_song(file: UploadFile = File(...)):
         
         # 2. Create spectrogram
         spectrogram, sampling_rate = create_spectrogram(wav_io)
-        visualize_spectrogram(spectrogram, sampling_rate, save_path="spectrogram.png")
+        #visualize_spectrogram(spectrogram, sampling_rate, save_path="spectrogram.png")
+
         # 3. Extract features for fingerprinting
-        # Example placeholder:
-        # audio_fingerprint = create_fingerprint(contents)
+        fingerprint = generate_fingerprint(spectrogram)
 
-        # TODO: Strore fingerprint in database
-        # Example placeholder
-        # db_id = store_fingerprint_in_db(audio_fingerprint, file.filename)
-
-        new_id = max(song.id for song in songs_db) + 1
         song_title = file.filename.replace('.mp3', '').replace('.wav', '')
-        new_song = Song(id=new_id, title=song_title, artist="Unknown")
-        songs_db.append(new_song)
+        new_song = SongModel(title=song_title, artist="Unknown")
+        db.add(new_song)
+        db.commit()
+        db.refresh(new_song)
+        
+        # Store fingerprints in the database
+        for hash_value, offsets in fingerprint.items():
+            for offset in offsets:
+                new_fp = FingerprintModel(song_id=new_song.id, hash_value=hash_value, offset=int(offset))
+                db.add(new_fp)
+        db.commit()
         
         return new_song
 

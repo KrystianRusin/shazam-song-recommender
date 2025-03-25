@@ -5,9 +5,11 @@ import os
 import logging
 import numpy as np
 import librosa
-from io import BytesIO
+import hashlib
+import scipy.ndimage as ndimage
 import matplotlib.pyplot as plt
 import librosa.display
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +56,6 @@ def convert_to_wav(mp3_bytes):
         raise Exception(f"FFmpeg conversion failed: {e}")
     
 def create_spectrogram(wav_io):
-    logger.info("Create spectrogram called")
-
     wav_io.seek(0)
     # Save audio data to temp file because librosa has trouble with BytesIO object
     with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_wav:
@@ -64,7 +64,6 @@ def create_spectrogram(wav_io):
 
     # Load audio data
     song_data, sampling_rate = librosa.load(temp_wav_path, sr=None)
-    logger.info("song_data loaded")
 
     # Compute the Mel spectrogram (returns power values)
     mel_spec = librosa.feature.melspectrogram(
@@ -73,11 +72,9 @@ def create_spectrogram(wav_io):
         n_fft=2048,
         hop_length=512
     )
-    logger.info("Mel spec created")
 
     # Convert the power spectrogram to decibel scale
     spectrogram_dB = librosa.power_to_db(mel_spec, ref=np.max)
-    logger.info("Covnerted to db")
 
     return spectrogram_dB, sampling_rate
 
@@ -99,3 +96,47 @@ def visualize_spectrogram(spectrogram_dB, sampling_rate, hop_length=512, save_pa
         plt.close()  
     else:
         plt.show()
+
+def detect_local_peaks(spectrogram, threshold_db=-40, neighborhood_size=20):
+    
+    # Create square footprint of ones
+    footprint = np.ones((neighborhood_size, neighborhood_size))
+
+    # Use max filter over spectrogram
+    local_max = ndimage.maximum_filter(spectrogram, footprint=footprint)
+
+    # A point is a peak if it equals the local max and is above the threshold
+    peaks_max = (spectrogram == local_max) & (spectrogram >= threshold_db)
+
+    # Find coordinates (freq, and time) of these peaks
+    peaks = np.argwhere(peaks_max)
+    return [tuple(p) for p in peaks]
+
+def find_peaks_in_target_zone(peaks, anchor_peak, min_time_delta=0, max_time_delta=30):
+    _, anchor_time = anchor_peak
+    target_peaks = [
+        peak for peak in peaks
+        if (peak[1] - anchor_time) >= min_time_delta and (peak[1] - anchor_time) <= max_time_delta
+    ]
+    return target_peaks
+
+def create_hash(anchor_freq, target_freq, time_diff):
+
+    # Combine the parameters into a single string.
+    hash_input = f"{anchor_freq}-{target_freq}-{time_diff}"
+    # Compute the MD5 hash of the input string.
+    hash_obj = hashlib.md5(hash_input.encode('utf-8'))
+    return hash_obj.hexdigest()
+
+def generate_fingerprint(spectrogram):
+    fingerprint = defaultdict(list)
+    peaks = detect_local_peaks(spectrogram)
+    for peak in peaks:
+        anchor_freq, anchor_time = peak  
+        target_peaks = find_peaks_in_target_zone(peaks, peak)
+        for target_peak in target_peaks:
+            target_freq, target_time = target_peak
+            time_diff = target_time - anchor_time
+            hash_value = create_hash(anchor_freq, target_freq, time_diff)
+            fingerprint[hash_value].append(anchor_time)
+    return fingerprint
