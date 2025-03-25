@@ -4,6 +4,10 @@ import tempfile
 import os
 import logging
 import numpy as np
+import librosa
+from io import BytesIO
+import matplotlib.pyplot as plt
+import librosa.display
 
 logger = logging.getLogger(__name__)
 
@@ -49,5 +53,49 @@ def convert_to_wav(mp3_bytes):
         logger.error(f"FFmpeg conversion failed: {e}")
         raise Exception(f"FFmpeg conversion failed: {e}")
     
+def create_spectrogram(wav_io):
+    logger.info("Create spectrogram called")
 
+    wav_io.seek(0)
+    # Save audio data to temp file because librosa has trouble with BytesIO object
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_wav:
+        temp_wav.write(wav_io.read())
+        temp_wav_path = temp_wav.name
+
+    # Load audio data
+    song_data, sampling_rate = librosa.load(temp_wav_path, sr=None)
+    logger.info("song_data loaded")
+
+    # Compute the Mel spectrogram (returns power values)
+    mel_spec = librosa.feature.melspectrogram(
+        y=song_data,
+        sr=sampling_rate,
+        n_fft=2048,
+        hop_length=512
+    )
+    logger.info("Mel spec created")
+
+    # Convert the power spectrogram to decibel scale
+    spectrogram_dB = librosa.power_to_db(mel_spec, ref=np.max)
+    logger.info("Covnerted to db")
+
+    return spectrogram_dB, sampling_rate
+
+def visualize_spectrogram(spectrogram_dB, sampling_rate, hop_length=512, save_path=None):
+    plt.figure(figsize=(10, 4))
+    librosa.display.specshow(
+        spectrogram_dB, 
+        sr=sampling_rate, 
+        hop_length=hop_length,
+        x_axis='time', 
+        y_axis='mel'
+    )
+    plt.colorbar(format='%+2.0f dB')
+    plt.title('Mel Spectrogram (dB)')
+    plt.tight_layout()
     
+    if save_path:
+        plt.savefig(save_path)
+        plt.close()  
+    else:
+        plt.show()

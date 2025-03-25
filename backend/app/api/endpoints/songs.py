@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from backend.models.database import get_db
 from backend.models.song import Song as SongModel, Fingerprint
-from backend.utils.audio_processing import convert_to_wav
+from backend.utils.audio_processing import convert_to_wav, create_spectrogram, visualize_spectrogram
 from typing import List
 
 router = APIRouter()
@@ -58,7 +58,10 @@ async def upload_song(file: UploadFile = File(...)):
             # Verify conversion worked
             wav_data = wav_io.read()
             logger.info(f"Successfully converted to WAV: {len(wav_data)} bytes")
+        
         # 2. Create spectrogram
+        spectrogram, sampling_rate = create_spectrogram(wav_io)
+        visualize_spectrogram(spectrogram, sampling_rate, save_path="spectrogram.png")
         # 3. Extract features for fingerprinting
         # Example placeholder:
         # audio_fingerprint = create_fingerprint(contents)
